@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+import os, sys, zipfile, requests, json, hashlib, shutil, importlib.util
+
+CONFIG = ".flxconfig"
+IGNORE_FILE = ".flxignore"
+
+# 🔥 Plugin folders: project-level + client.py-level
+CLIENT_DIR = os.path.dirname(os.path.realpath(__file__))
+PLUGIN_DIRS = [
+    os.path.join(os.getcwd(), "plugins"),       # project folder
+    os.path.join(CLIENT_DIR, "plugins")         # global folder next to client.py
+]
+
+def load_config():
+    with open(CONFIG) as f:
+        return json.load(f)
+
+def save_config(cfg):
+    with open(CONFIG, "w") as f:
+        json.dump(cfg, f, indent=2)
+
+def load_ignore():
+    if not os.path.exists(IGNORE_FILE):
+        return []
+    with open(IGNORE_FILE) as f:
+        return [line.strip() for line in f if line.strip()]
+
+def is_ignored(path, ignores):
+    for i in ignores:
+        if i in path:
+            return True
+    return False
+
+def init():
+    repo = os.path.basename(os.getcwd())
+    cfg = {
+        "repo": repo,
+        "server": "http://127.0.0.1:2240",
+        "last_version": None
+    }
+    save_config(cfg)
+    print("✅ Repo initialized:", repo)
+
+def zip_project(zip_name):
+    ignores = load_ignore()
+    with zipfile.ZipFile(zip_name, "w") as z:
+        for root, dirs, files in os.walk("."):
+            if CONFIG in root:
+                continue
+            for file in files:
+                if file in [zip_name, CONFIG, IGNORE_FILE]:
+                    continue
+                path = os.path.join(root, file)
+                if is_ignored(path, ignores):
+                    continue
+                z.write(path)
+
+def push(version, message="No message"):
+    if not os.path.exists(CONFIG):
+        print("❌ Not a FLX repo. Run: flx init")
+        return
+
+    cfg = load_config()
+    repo = cfg["repo"]
+    server = cfg["server"]
+
+    zip_name = f"{version}.zip"
+    zip_project(zip_name)
+
+    files = {"file": open(zip_name, "rb")}
+    data = {"repo": repo, "version": version, "message": message}
+
+    r = requests.post(f"{server}/push", files=files, data=data)
+    print("📤", r.json())
+
+    cfg["last_version"] = version
+    save_config(cfg)
+
+    os.remove(zip_name)
+
+def pull(version):
+    cfg = load_config()
+    repo = cfg["repo"]
+    server = cfg["server"]
+
+    url = f"{server}/pull/{repo}/{version}"
+    r = requests.get(url)
+
+    if r.status_code != 200:
+        print("❌ Version not found on server")
+        return
+
+    zip_name = f"{version}.zip"
+    with open(zip_name, "wb") as f:
+        f.write(r.content)
+
+    for item in os.listdir("."):
+        if item in [CONFIG, zip_name, IGNORE_FILE]:
+            continue
+        if os.path.isfile(item):
+            os.remove(item)
+        else:
+            shutil.rmtree(item)
+
+    with zipfile.ZipFile(zip_name, "r") as z:
+        z.extractall(".")
+
+    os.remove(zip_name)
+    print("♻️ Project restored to", version)
+
+def list_versions():
+    cfg = load_config()
+    repo = cfg["repo"]
+    server = cfg["server"]
+
+    r = requests.get(f"{server}/list/{repo}")
+    print("📦 Versions:")
+    for v in r.json():
+        print(" -", v)
+
+def log_versions():
+    cfg = load_config()
+    repo = cfg["repo"]
+    server = cfg["server"]
+
+    r = requests.get(f"{server}/log/{repo}")
+    for e in r.json():
+        msg = e.get("message", "No message")
+        print(f"{e['version']} - {msg} - {e['time']}")
+
+def file_hash(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
+
+def status():
+    cfg = load_config()
+    last = cfg["last_version"]
+    if not last:
+        print("No previous version.")
+        return
+
+    tmp = "__tmp.zip"
+    repo = cfg["repo"]
+    server = cfg["server"]
+
+    r = requests.get(f"{server}/pull/{repo}/{last}")
+    with open(tmp, "wb") as f:
+        f.write(r.content)
+
+    with zipfile.ZipFile(tmp, "r") as z:
+        z.extractall("__tmp")
+
+    current = {}
+    for root, dirs, files in os.walk("."):
+        for file in files:
+            if file in [CONFIG, IGNORE_FILE]:
+                continue
+            path = os.path.join(root, file)
+            current[path] = file_hash(path)
+
+    old = {}
+    for root, dirs, files in os.walk("__tmp"):
+        for file in files:
+            path = os.path.join(root, file)
+            old[path.replace("__tmp/","")] = file_hash(path)
+
+    for f in current:
+        if f not in old:
+            print("New:", f)
+        elif current[f] != old[f]:
+            print("Modified:", f)
+
+    for f in old:
+        if f not in current:
+            print("Deleted:", f)
+
+    shutil.rmtree("__tmp")
+    os.remove(tmp)
+
+# ---- PLUGIN SYSTEM ----
+def run_plugin(plugin_name, args):
+    plugin_file = None
+    for d in PLUGIN_DIRS:
+        p = os.path.join(d, f"{plugin_name}.py")
+        if os.path.exists(p):
+            plugin_file = p
+            break
+    if not plugin_file:
+        print("❌ Plugin not found:", plugin_name)
+        return
+
+    spec = importlib.util.spec_from_file_location(plugin_name, plugin_file)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    if hasattr(mod, "run"):
+        mod.run(args)
+    else:
+        print("❌ Plugin has no run(args) function")
+def store_list():
+    cfg = load_config()
+    server = cfg["server"]
+
+    r = requests.get(f"{server}/store/list")
+    print("🛒 FLX Plugin Store:")
+    for p in r.json():
+        print(" -", p)
+def store_install(plugin):
+    cfg = load_config()
+    server = cfg["server"]
+
+    url = f"{server}/store/get/{plugin}"
+    r = requests.get(url)
+
+    if r.status_code != 200:
+        print("❌ Plugin not found in store")
+        return
+
+    os.makedirs(PLUGIN_DIRS[0], exist_ok=True)
+    path = os.path.join(PLUGIN_DIRS[0], f"{plugin}.py")
+
+    with open(path, "wb") as f:
+        f.write(r.content)
+
+    print("✅ Installed plugin:", plugin)
+def store_remove(plugin):
+    for d in PLUGIN_DIRS:
+        path = os.path.join(d, f"{plugin}.py")
+        if os.path.exists(path):
+            os.remove(path)
+            print("🗑️ Removed plugin:", plugin)
+            return
+    print("❌ Plugin not installed")
+def plugins_list():
+    found = set()
+    for d in PLUGIN_DIRS:
+        if os.path.exists(d):
+            for f in os.listdir(d):
+                if f.endswith(".py"):
+                    found.add(f.replace(".py",""))
+    print("📦 Installed plugins:")
+    for p in found:
+        print(" -", p)
+
+# ---------------- MAIN ----------------
+if len(sys.argv) < 2:
+    print("Usage: flx init | push -v <version> [-c <message>] | pull <version> | list | log | status | -p <plugin> [args]")
+    sys.exit()
+
+cmd = sys.argv[1]
+
+if cmd == "init":
+    init()
+
+elif cmd == "push":
+    if len(sys.argv) < 4 or sys.argv[2] != "-v":
+        print("Usage: flx push -v <version> [-c <message>]")
+    else:
+        version = sys.argv[3]
+        message = "No message"
+        if "-c" in sys.argv:
+            c_index = sys.argv.index("-c")
+            if len(sys.argv) > c_index + 1:
+                message = sys.argv[c_index + 1]
+        push(version, message)
+
+elif cmd == "pull":
+    pull(sys.argv[2])
+
+elif cmd == "list":
+    list_versions()
+
+elif cmd == "log":
+    log_versions()
+
+elif cmd == "status":
+    status()
+elif cmd == "store":
+    store_list()
+
+elif cmd == "install":
+    store_install(sys.argv[2])
+
+elif cmd == "remove":
+    store_remove(sys.argv[2])
+
+elif cmd == "plugins":
+    plugins_list()
+elif cmd == "-p":
+    if len(sys.argv) < 3:
+        print("Usage: flx -p <plugin_name> [args]")
+    else:
+        run_plugin(sys.argv[2], sys.argv[3:])
+
+else:
+    print("Unknown command try again")
