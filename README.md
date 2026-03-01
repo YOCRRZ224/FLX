@@ -67,4 +67,6 @@ Think of it as **Git, but fast, minimal, and enriched with plugins + AI magic**.
 
 - on any other device put it in usr/bin folder
 
-runt the python file
+run the python file
+
+- **YOU ARE READY NOW RUN `flx`**
