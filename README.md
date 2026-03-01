@@ -57,6 +57,6 @@ Think of it as **Git, but fast, minimal, and enriched with plugins + AI magic**.
 ## install
 - **RUN THIS ONE LINER** =>
 - ```bash
-  git clone
+  git clone https://github.com/YOCRRZ224/FLX.git && cd FLX
 ## How
 - **Run main.py** - server run.
