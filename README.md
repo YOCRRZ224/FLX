@@ -59,4 +59,12 @@ Think of it as **Git, but fast, minimal, and enriched with plugins + AI magic**.
 - ```bash
   git clone https://github.com/YOCRRZ224/FLX.git && cd FLX
 ## How
-- **Run main.py** - server run.
+- **Run main.py** - server run
+- **To use FLX command globally and ready for use just one line**
+- on termux =>
+- ```bash
+  cd && cd FLX && mv flx /data/data/com.termux/files/usr/bin && chmod +x /data/data/com.termux/files/usr/bin/flx && cd && mkdir /data/data/com.termux/files/usr/bin/plugins
+
+- on any other device put it in usr/bin folder
+
+runt the python file
