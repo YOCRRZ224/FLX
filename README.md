@@ -54,7 +54,9 @@ Think of it as **Git, but fast, minimal, and enriched with plugins + AI magic**.
 - **management** - your own server and management.
 
 ---
+## install
+- **RUN THIS ONE LINER** =>
+- ```bash
+  git clone
 ## How
-- **Run main.py** - server ran
-- in termux => run this
-  
+- **Run main.py** - server run.
