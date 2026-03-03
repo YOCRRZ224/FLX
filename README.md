@@ -63,10 +63,13 @@ Think of it as **Git, but fast, minimal, and enriched with plugins + AI magic**.
 - **To use FLX command globally and ready for use just one line**
 - on termux =>
 - ```bash
-  cd && cd FLX && mv flx /data/data/com.termux/files/usr/bin && chmod +x /data/data/com.termux/files/usr/bin/flx && cd && mkdir /data/data/com.termux/files/usr/bin/plugins
+  cd && cd FLX && mv flx /data/data/com.termux/files/usr/bin && chmod +x /data/data/com.termux/files/usr/bin/flx && cd
 
 - on any other device put it in usr/bin folder
 
 run the python file
+```bash
+cd && cd flx && python main.py
+```
 
 - **YOU ARE READY NOW RUN `flx`**
